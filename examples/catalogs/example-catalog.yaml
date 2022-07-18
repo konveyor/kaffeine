@@ -1,0 +1,45 @@
+apiVersion: config.kubernetes.io/v1alpha1
+kind: Catalog
+metadata: 
+  name: "example-co-functions"
+spec: 
+  krmFunctions: 
+  - group: example.com
+    names:
+      kind: JavaApplication
+    description: "A function that can handle Java apps"
+    versions:
+    - name: v2.0.0
+      runtime: 
+        container: 
+          image: docker.example.co/functions/java:v2.0.0
+    - name: v1.0.0
+      runtime: 
+        container: 
+          image: docker.example.co/functions/java:v1.0.0
+  - group: example.com
+    names:
+      kind: Logger
+    description: "A function that adds our bespoke logging"
+    versions:
+    - name: v1.0.2
+      runtime: 
+        container: 
+          image: docker.example.co/functions/logger:v1.0.2
+    - name: v1.0.1
+      runtime: 
+        container: 
+          image: docker.example.co/functions/logger:v1.0.1
+    - name: v1.0.0
+      runtime: 
+        container: 
+          image: docker.example.co/functions/logger:v1.0.0
+  - group: example.com
+    names:
+      kind: SecretSidecar
+    description: "A function that adds our bespoke secret sidecar"
+    versions:
+    - name: v3
+      runtime: 
+        container: 
+          image: docker.example.co/functions/secrets:v3.0.0

@@ -1,0 +1,21 @@
+apiVersion: config.kubernetes.io/v1alpha1
+kind: KRMFunctionCatalog
+metadata:
+  creationTimestamp: "2022-07-14T13:28:19Z"
+  name: Kaffine Output Catalog
+spec:
+  krmFunctions:
+  - description: A function that adds our bespoke logging
+    group: example.com
+    names:
+      kind: Logger
+    publisher: ""
+    versions:
+    - examples: null
+      idempotent: false
+      license: ""
+      name: v1.0.2
+      runtime:
+        container:
+          image: docker.example.co/functions/logger:v1.0.2
+      usage: ""
