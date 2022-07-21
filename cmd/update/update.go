@@ -2,8 +2,9 @@ package update
 
 import (
 	"fmt"
-	"kaffine-mod/kaffine"
 	"os"
+
+	"github.com/konveyor/kaffeine/kaffeine"
 
 	"github.com/spf13/cobra"
 )
@@ -13,14 +14,16 @@ func NewUpdateCommand() *cobra.Command {
 		Use:   "update",
 		Short: "Updates all functions to their latest versions",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, errs := kaffine.Fm.CatMan.UpdateAllCatalogs()
+			functionManager := kaffeine.NewFunctionManager("")
+
+			_, errs := functionManager.CatMan.UpdateAllCatalogs()
 			for _, err := range errs {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "%v\n", err)
 				}
 			}
 
-			_, errs = kaffine.Fm.UpdateAllFunctionDefinitions()
+			_, errs = functionManager.UpdateAllFunctionDefinitions()
 			for _, err := range errs {
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -28,8 +31,12 @@ func NewUpdateCommand() *cobra.Command {
 				}
 			}
 
-			fmt.Println("Successfully updated catalogs and functions")
+			err := functionManager.Save()
+			if err != nil {
+				return err
+			}
 
+			fmt.Println("Successfully updated catalogs and functions")
 			return nil
 		},
 	}

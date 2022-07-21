@@ -9,9 +9,9 @@ import (
 func NewVersionCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print the version number of Kaffine",
+		Short: "Print the version number of kaffeine",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Kaffine version 0.0.0")
+			fmt.Println("kaffeine version 0.0.0")
 
 			return nil
 		},

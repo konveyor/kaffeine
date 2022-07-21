@@ -1,4 +1,4 @@
-package kaffine
+package kaffeine
 
 import (
 	"errors"
@@ -20,7 +20,47 @@ type FunctionManager struct {
 	Installed map[string]FunctionDefinition
 }
 
+// Traverses the file tree upward, until it finds either a folder named
+// ".kaffeine" or tries to go past "/". If no directory is found, it returns
+// the result of:
+// 	wd, _ := os.Getwd()
+// 	filepath.Join(wd, "/.kaffeine/")`
+func GetDirectory() (dir string, err error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	checkDir := wd
+
+	for ok := true; ok; ok = (checkDir != "/") {
+		info, err := os.Stat(filepath.Join(checkDir, "/.kaffeine/"))
+
+		if !os.IsNotExist(err) && info.IsDir() {
+			dir = filepath.Join(checkDir, "/.kaffeine/")
+			break
+		}
+
+		checkDir = filepath.Clean(filepath.Join(checkDir, ".."))
+	}
+
+	if dir == "" {
+		dir = filepath.Clean(filepath.Join(wd, "/.kaffeine/"))
+	}
+
+	return dir, err
+}
+
+// Returns a new KRM Function Manager struct.
+// If directory == "", it will use GetDirectory() to find where to store its
+// files.
 func NewFunctionManager(directory string) *FunctionManager {
+	if directory == "" {
+		directory, _ = GetDirectory()
+	}
+
+	os.MkdirAll(directory, os.ModePerm)
+
 	fm := FunctionManager{}
 
 	fm.Directory = directory
@@ -38,14 +78,13 @@ func NewFunctionManager(directory string) *FunctionManager {
 	fm.Cfg.Catalogs = maps.Keys(fm.CatMan.Catalogs)
 
 	// LIST CACHE
-	// .    .     - Do nothing
-	// .    x     - Remove from cache
-	// x    .     - Attempt to fetch catalog and load into memory
-	// x    x     - Load into memory
-
+	// n    n     - Do nothing
+	// n    Y     - Remove from cache
+	// Y    n     - Attempt to fetch catalog and load into memory
+	// Y    Y     - Load into memory
+	os.MkdirAll(filepath.Join(fm.Directory, "functions"), os.ModePerm)
 	fm.Installed = map[string]FunctionDefinition{}
 	for _, fname := range fm.Cfg.Dependencies.KrmFunctions {
-		// FIXME: Extremely inefficient!
 		_, err := fm.AddFunctionDefinition(fname)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v", err)
@@ -59,10 +98,18 @@ func NewFunctionManager(directory string) *FunctionManager {
 func (fm *FunctionManager) Save() error {
 	fm.UpdateConfig()
 
-	os.RemoveAll(filepath.Join(fm.Directory, "functions"))
+	fnBakDirectory := filepath.Join(fm.Directory, "functions.bak")
+	os.RemoveAll(fnBakDirectory)
+	err := os.Rename(filepath.Join(fm.Directory, "functions"), fnBakDirectory)
+	if err != nil {
+		return err
+	}
+
 	for _, groupName := range maps.Keys(fm.Installed) {
 		fm.SaveFunctionDefinition(groupName)
 	}
+
+	os.RemoveAll(fnBakDirectory)
 
 	if installedCatalog, err := fm.GenerateInstalledCatalog(); err != nil {
 		return err
@@ -265,7 +312,7 @@ func (fm *FunctionManager) SearchFunctionDefintions(fname string) (result []byte
 }
 
 func (fm *FunctionManager) GenerateInstalledCatalog() (result []byte, err error) {
-	fc := MakeFunctionCatalog("Kaffine Managed Functions")
+	fc := MakeFunctionCatalog("kaffeine Managed Functions")
 	for _, fn := range fm.Installed {
 		fc.Spec.KrmFunctions = append(fc.Spec.KrmFunctions, fn)
 	}

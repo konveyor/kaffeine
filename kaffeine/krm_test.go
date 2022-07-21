@@ -1,4 +1,4 @@
-package kaffine
+package kaffeine
 
 import (
 	"testing"

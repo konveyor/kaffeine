@@ -1,6 +1,7 @@
-package kaffine
+package kaffeine
 
 import (
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
@@ -13,14 +14,22 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// Catalog Manager struct
 type CatalogManager struct {
+	// The directory of the catalogs to manage. Usually /.kaffine/catalogs/
 	Directory string
-	Catalogs  map[string]FunctionCatalog
+
+	// The catalogs themselves. The key is the URI of the FunctionCatalog
+	Catalogs map[string]FunctionCatalog
+
+	// Every function contained within each catalog. The key is the
+	// FunctionDefinition's GroupName (group + "/" + name). As a result, an effort
+	// is made to ensure that every new catalog added has unique functions inside
 	Functions map[string]FunctionDefinition
 }
 
-func MakeCatalogManager(directory string) CatalogManager {
-	cm := CatalogManager{}
+// Creates a CatalogManager struct
+func MakeCatalogManager(directory string) (cm CatalogManager) {
 	cm.Directory = filepath.Clean(filepath.Join(directory, "/catalogs"))
 	cm.Catalogs = map[string]FunctionCatalog{}
 	cm.Functions = map[string]FunctionDefinition{}
@@ -30,9 +39,20 @@ func MakeCatalogManager(directory string) CatalogManager {
 	return cm
 }
 
+// Moves all current cached catalogs into "../catalogs.bak", then tries to save
+// all new catalogs into "catalogs".
 func (cm *CatalogManager) Save() (err error) {
-	os.RemoveAll(cm.Directory)
-	os.MkdirAll(cm.Directory, os.ModePerm)
+	bakDirectory := filepath.Clean(filepath.Join(cm.Directory, "../catalogs.bak"))
+	os.RemoveAll(bakDirectory)
+	err = os.Rename(cm.Directory, bakDirectory)
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(cm.Directory, os.ModePerm)
+	if err != nil {
+		return err
+	}
 
 	for uri, cat := range cm.Catalogs {
 		b, err := yaml.Marshal(cat)
@@ -40,17 +60,23 @@ func (cm *CatalogManager) Save() (err error) {
 			return err
 		}
 
-		hashName := SHA1(uri) + ".yaml"
+		hashName := fmt.Sprintf("%x", sha1.Sum([]byte(uri))) + ".yaml"
 		err = os.WriteFile(filepath.Join(cm.Directory, hashName), b, os.ModePerm)
 		if err != nil {
 			return err
 		}
 	}
 
+	os.RemoveAll(bakDirectory)
+
 	return
 }
 
-// Tries to look in cache first
+// Adds the catalog with the given uri to the catalog manager. Throws errors
+// if the catalog:
+// 	- with the given uri is already present
+// 	- has functions with GroupNames already present
+// 	- has functions with no versions
 func (cm *CatalogManager) AddCatalog(uri string) (err error) {
 	// Already added
 	if _, ok := cm.Catalogs[uri]; ok {
@@ -88,13 +114,14 @@ func (cm *CatalogManager) AddCatalog(uri string) (err error) {
 	return nil
 }
 
+// Tries to fetch the catalog with the given uri from the filesystem cache.
 func (cm *CatalogManager) GetCachedCatalog(uri string) (fc FunctionCatalog, err error) {
 	catalogFileInfo, err := os.ReadDir(cm.Directory)
 	if err != nil {
 		return
 	}
 
-	hashedFilename := SHA1(uri) + ".yaml"
+	hashedFilename := fmt.Sprintf("%x", sha1.Sum([]byte(uri))) + ".yaml"
 	ok := false
 	for _, x := range catalogFileInfo {
 		if x.Name() == hashedFilename {
@@ -120,6 +147,8 @@ func (cm *CatalogManager) GetCachedCatalog(uri string) (fc FunctionCatalog, err 
 	return
 }
 
+// Tries to fetch the catalog from the given uri. External in this case means
+// "not from the filesystem cache"
 func (cm *CatalogManager) GetExternalCatalog(uri string) (fc FunctionCatalog, err error) {
 	u, err := url.ParseRequestURI(uri)
 	if err != nil {
@@ -152,7 +181,7 @@ func (cm *CatalogManager) GetExternalCatalog(uri string) (fc FunctionCatalog, er
 	return
 }
 
-// Removes all traces
+// Tries to remove the catalog from the CatalogManager
 func (cm *CatalogManager) RemoveCatalog(uri string) (oldFc FunctionCatalog, err error) {
 	if _, ok := cm.Catalogs[uri]; !ok {
 		return oldFc, errors.New("catalog with uri not present")
@@ -163,37 +192,40 @@ func (cm *CatalogManager) RemoveCatalog(uri string) (oldFc FunctionCatalog, err 
 	}
 
 	oldFc = cm.Catalogs[uri]
-
 	delete(cm.Catalogs, uri)
 
 	return oldFc, nil
 }
 
-// Clobbers catalog
+// Updates the catalog with the given uri. This is accomplished by deleting the
 func (cm *CatalogManager) UpdateCatalog(uri string) (oldFc FunctionCatalog, err error) {
-	// fmt.Println("UPDATING", uri)
-	// fmt.Println("REMOVING", uri)
 	oldFc, err = cm.RemoveCatalog(uri)
 	if err != nil {
 		return
 	}
 
-	// fmt.Println("GETTING EXTERNAL", uri)
+	revertToOldFc := func() {
+		cm.Catalogs[uri] = oldFc
+		for _, fn := range oldFc.Spec.KrmFunctions {
+			cm.Functions[fn.GroupName()] = fn
+		}
+	}
+
 	var newFc FunctionCatalog
 	newFc, err = cm.GetExternalCatalog(uri)
 	if err != nil {
-		// cm.Catalogs[uri] = oldFc
+		revertToOldFc()
 		return
 	}
-
-	// fmt.Println("PUTTING INTO MEMORY")
 
 	// Check for conflicting names
 	for _, fn := range newFc.Spec.KrmFunctions {
 		if _, ok := cm.Functions[fn.GroupName()]; ok {
+			revertToOldFc()
 			return oldFc, errors.New("attempted to add catalog that contains conflicting names")
 		}
 		if len(fn.Versions) == 0 {
+			revertToOldFc()
 			return oldFc, fmt.Errorf("attempted to add function '%s' with no versions", fn.GroupName())
 		}
 	}
@@ -203,15 +235,11 @@ func (cm *CatalogManager) UpdateCatalog(uri string) (oldFc FunctionCatalog, err 
 	}
 	cm.Catalogs[uri] = newFc
 
-	// b, _ := yaml.Marshal(newFc)
-	// for _, fn := range cm.Catalogs[uri].Spec.KrmFunctions {
-	// 	fmt.Println(fn)
-	// }
-	// fmt.Println(string(b))
-
 	return
 }
 
+// Executes UpdateCatalog on all catalogs in the struct. Returns an array of old
+// catalogs and an array of errors encountered.
 func (cm *CatalogManager) UpdateAllCatalogs() (oldFcs []FunctionCatalog, errs []error) {
 	for uri, _ := range cm.Catalogs {
 		fc, err := cm.UpdateCatalog(uri)
@@ -222,9 +250,8 @@ func (cm *CatalogManager) UpdateAllCatalogs() (oldFcs []FunctionCatalog, errs []
 	return
 }
 
-// use .GroupName() function
+// Searches for the given function
 func (cm *CatalogManager) Search(fname string, lowercase bool) (fns []FunctionDefinition, err error) {
-	// fmt.Println("SEARCHING FOR" + fname)
 	group, name, version := ToGroupNameVersion(fname)
 	groupName := name
 	if group != "" {
@@ -232,7 +259,6 @@ func (cm *CatalogManager) Search(fname string, lowercase bool) (fns []FunctionDe
 	}
 
 	for _, queryDef := range cm.Functions {
-		// fmt.Println("CHECKING", queryDef.GroupName(), "AGAINST", groupName)
 		if lowercase {
 			if !strings.Contains(strings.ToLower(queryDef.GroupName()), strings.ToLower(groupName)) {
 				continue
@@ -261,38 +287,39 @@ func (cm *CatalogManager) Search(fname string, lowercase bool) (fns []FunctionDe
 	return fns, nil
 }
 
-func (cm *CatalogManager) SearchExact(fname string) (fn FunctionDefinition, err error) {
-	group, name, version := ToGroupNameVersion(fname)
-	groupName := name
-	if group != "" {
-		groupName = group + "/" + groupName
-	}
+// // UNUSED
+// func (cm *CatalogManager) SearchExact(fname string) (fn FunctionDefinition, err error) {
+// 	group, name, version := ToGroupNameVersion(fname)
+// 	groupName := name
+// 	if group != "" {
+// 		groupName = group + "/" + groupName
+// 	}
 
-	var ok bool
-	fn, ok = cm.Functions[groupName]
-	if !ok {
-		return fn, fmt.Errorf("function with exact name '%s' not found", groupName)
-	}
+// 	var ok bool
+// 	fn, ok = cm.Functions[groupName]
+// 	if !ok {
+// 		return fn, fmt.Errorf("function with exact name '%s' not found", groupName)
+// 	}
 
-	if version != "" {
-		var versions []FunctionVersion
-		for _, queryVersion := range fn.Versions {
-			if queryVersion.Name == version {
-				versions = append(versions, queryVersion)
-			}
-		}
+// 	if version != "" {
+// 		var versions []FunctionVersion
+// 		for _, queryVersion := range fn.Versions {
+// 			if queryVersion.Name == version {
+// 				versions = append(versions, queryVersion)
+// 			}
+// 		}
 
-		if len(versions) == 0 {
-			return fn, fmt.Errorf("function with exact name and version '%s' not found", fname)
-		}
+// 		if len(versions) == 0 {
+// 			return fn, fmt.Errorf("function with exact name and version '%s' not found", fname)
+// 		}
 
-		fn.Versions = versions
-	}
+// 		fn.Versions = versions
+// 	}
 
-	return
-}
+// 	return
+// }
 
-// INPUT MUST BE SORTED
-func (cm *CatalogManager) SearchMultiple(fnames []string) (fnss [][]FunctionDefinition, errs []error) {
-	return
-}
+// // UNUSED
+// func (cm *CatalogManager) SearchMultiple(fnames []string) (fnss [][]FunctionDefinition, errs []error) {
+// 	return
+// }

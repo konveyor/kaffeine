@@ -1,4 +1,4 @@
-package kaffine
+package kaffeine
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func MakeFunctionCatalog(name string) (fc FunctionCatalog) {
 	return
 }
 
-var IgnoreAutoUpdates string = "kaffine.config/ignore-auto-updates"
+var IgnoreAutoUpdates string = "kaffeine.config/ignore-auto-updates"
 
 type FunctionDefinition struct {
 	// required
