@@ -9,10 +9,9 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// support both local and global config
-// global config determined by kaffeine_GLOBAL_CONFIG env variable.
+// TODO: support both local and global config
+// global config determined by KAFFEINE_GLOBAL_CONFIG env variable.
 // If unset, defaults to ~/.kaffeine/config
-//
 func NewConfigCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
@@ -27,7 +26,7 @@ func NewConfigCommand() *cobra.Command {
 			functionManager := kaffeine.NewFunctionManager("")
 
 			uri := args[len(args)-1]
-			err := functionManager.CatMan.AddCatalog(uri)
+			err := functionManager.CatMan.AddCatalogFromUri(uri)
 			if err != nil {
 				return err
 			}

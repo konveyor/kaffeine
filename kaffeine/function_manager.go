@@ -70,7 +70,7 @@ func NewFunctionManager(directory string) *FunctionManager {
 	fm.Cfg = &cfg
 
 	for _, uri := range fm.Cfg.Catalogs {
-		err := fm.CatMan.AddCatalog(uri)
+		err := fm.CatMan.AddCatalogFromUri(uri)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v", err)
 		}

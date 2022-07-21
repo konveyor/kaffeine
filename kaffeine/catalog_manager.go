@@ -72,12 +72,32 @@ func (cm *CatalogManager) Save() (err error) {
 	return
 }
 
-// Adds the catalog with the given uri to the catalog manager. Throws errors
-// if the catalog:
-// 	- with the given uri is already present
+// Adds the given FunctionCatalog to the catalog manager. Throws errors if the
+// catalog:
 // 	- has functions with GroupNames already present
 // 	- has functions with no versions
-func (cm *CatalogManager) AddCatalog(uri string) (err error) {
+func (cm *CatalogManager) AddCatalogFromStruct(uri string, cat FunctionCatalog) (err error) {
+	// Check for conflicting names
+	for _, fn := range cat.Spec.KrmFunctions {
+		if _, ok := cm.Functions[fn.GroupName()]; ok {
+			return errors.New("attempted to add catalog that contains conflicting names")
+		}
+		if len(fn.Versions) == 0 {
+			return fmt.Errorf("attempted to add function '%s' with no versions", fn.GroupName())
+		}
+	}
+
+	for _, fn := range cat.Spec.KrmFunctions {
+		cm.Functions[fn.GroupName()] = fn
+	}
+	cm.Catalogs[uri] = cat
+
+	return nil
+}
+
+// Adds the catalog with the given uri to the catalog manager. Throws errors if the
+// catalog with the given uri is already present
+func (cm *CatalogManager) AddCatalogFromUri(uri string) (err error) {
 	// Already added
 	if _, ok := cm.Catalogs[uri]; ok {
 		return errors.New("catalog already present")
@@ -96,22 +116,7 @@ func (cm *CatalogManager) AddCatalog(uri string) (err error) {
 		}
 	}
 
-	// Check for conflicting names
-	for _, fn := range cat.Spec.KrmFunctions {
-		if _, ok := cm.Functions[fn.GroupName()]; ok {
-			return errors.New("attempted to add catalog that contains conflicting names")
-		}
-		if len(fn.Versions) == 0 {
-			return fmt.Errorf("attempted to add function '%s' with no versions", fn.GroupName())
-		}
-	}
-
-	for _, fn := range cat.Spec.KrmFunctions {
-		cm.Functions[fn.GroupName()] = fn
-	}
-	cm.Catalogs[uri] = cat
-
-	return nil
+	return cm.AddCatalogFromStruct(uri, cat)
 }
 
 // Tries to fetch the catalog with the given uri from the filesystem cache.
@@ -204,28 +209,21 @@ func (cm *CatalogManager) UpdateCatalog(uri string) (oldFc FunctionCatalog, err 
 		return
 	}
 
-	revertToOldFc := func() {
-		cm.Catalogs[uri] = oldFc
-		for _, fn := range oldFc.Spec.KrmFunctions {
-			cm.Functions[fn.GroupName()] = fn
-		}
-	}
-
 	var newFc FunctionCatalog
 	newFc, err = cm.GetExternalCatalog(uri)
 	if err != nil {
-		revertToOldFc()
+		cm.AddCatalogFromStruct(uri, oldFc)
 		return
 	}
 
 	// Check for conflicting names
 	for _, fn := range newFc.Spec.KrmFunctions {
 		if _, ok := cm.Functions[fn.GroupName()]; ok {
-			revertToOldFc()
+			cm.AddCatalogFromStruct(uri, oldFc)
 			return oldFc, errors.New("attempted to add catalog that contains conflicting names")
 		}
 		if len(fn.Versions) == 0 {
-			revertToOldFc()
+			cm.AddCatalogFromStruct(uri, oldFc)
 			return oldFc, fmt.Errorf("attempted to add function '%s' with no versions", fn.GroupName())
 		}
 	}
@@ -286,40 +284,3 @@ func (cm *CatalogManager) Search(fname string, lowercase bool) (fns []FunctionDe
 
 	return fns, nil
 }
-
-// // UNUSED
-// func (cm *CatalogManager) SearchExact(fname string) (fn FunctionDefinition, err error) {
-// 	group, name, version := ToGroupNameVersion(fname)
-// 	groupName := name
-// 	if group != "" {
-// 		groupName = group + "/" + groupName
-// 	}
-
-// 	var ok bool
-// 	fn, ok = cm.Functions[groupName]
-// 	if !ok {
-// 		return fn, fmt.Errorf("function with exact name '%s' not found", groupName)
-// 	}
-
-// 	if version != "" {
-// 		var versions []FunctionVersion
-// 		for _, queryVersion := range fn.Versions {
-// 			if queryVersion.Name == version {
-// 				versions = append(versions, queryVersion)
-// 			}
-// 		}
-
-// 		if len(versions) == 0 {
-// 			return fn, fmt.Errorf("function with exact name and version '%s' not found", fname)
-// 		}
-
-// 		fn.Versions = versions
-// 	}
-
-// 	return
-// }
-
-// // UNUSED
-// func (cm *CatalogManager) SearchMultiple(fnames []string) (fnss [][]FunctionDefinition, errs []error) {
-// 	return
-// }
