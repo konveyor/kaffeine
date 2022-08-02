@@ -1,0 +1,2 @@
+#!/bin/bash
+sed 's+wordpress+obviously-not-wordpress+g'

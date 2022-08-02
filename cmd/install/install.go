@@ -26,7 +26,7 @@ func NewInstallCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Println("Successfully added KRM Function '" + fn.GroupName() + "'")
+			fmt.Println("Successfully added KRM Function '" + fn.GroupName() + "'\n")
 			return nil
 		},
 	}

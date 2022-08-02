@@ -3,6 +3,8 @@ package kaffeine
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -140,6 +142,39 @@ func (fm *FunctionManager) SaveFunctionDefinition(fname string) (fd FunctionDefi
 	fnFile := fd.Names.Kind + ".yaml"
 
 	os.MkdirAll(fnDir, os.ModePerm)
+
+	// FIXME: Better binary management
+	if len(fd.Versions[0].Runtime.Exec.Platforms) > 0 {
+		// fmt.Println("HEEERE")
+		oldUri := fd.Versions[0].Runtime.Exec.Platforms[0].Uri
+		resp, err := http.Get(oldUri)
+		if err != nil {
+			// fmt.Println(err)
+			return fd, err
+		}
+		defer resp.Body.Close()
+
+		binFile := filepath.Join(fnDir, fd.Names.Kind+filepath.Ext(oldUri))
+		// fmt.Println(binFile)
+		out, err := os.Create(binFile)
+		if err != nil {
+			return fd, err
+		}
+		defer out.Close()
+
+		_, err = io.Copy(out, resp.Body)
+		if err != nil {
+			return fd, err
+		}
+
+		fd.Metadata.Annotations[OriginalBinaryLocation] = oldUri
+		cpy := make([]FunctionRuntimePlatform, len(fd.Versions[0].Runtime.Exec.Platforms))
+		copy(cpy, fd.Versions[0].Runtime.Exec.Platforms)
+		cpy[0].Uri = "file://" + binFile
+		fd.Metadata.Annotations[LocalBinaryLocation] = "file://" + binFile
+		fd.Versions[0].Runtime.Exec.Platforms = cpy
+	}
+
 	b, err := yaml.Marshal(fd)
 	if err != nil {
 		return fd, err
@@ -167,6 +202,15 @@ func (fm *FunctionManager) AddFunctionDefinition(fname string) (fn FunctionDefin
 
 	if _, ok := fm.Installed[fn.GroupName()]; ok {
 		return fn, fmt.Errorf("function '%s' already installed", fn.GroupName())
+	}
+
+	// FIXME: Better binary management
+	if val, ok := fn.Metadata.Annotations[OriginalBinaryLocation]; ok && val != "" {
+		cpy := make([]FunctionRuntimePlatform, len(fn.Versions[0].Runtime.Exec.Platforms))
+		copy(cpy, fn.Versions[0].Runtime.Exec.Platforms)
+		fn.Metadata.Annotations[LocalBinaryLocation] = cpy[0].Uri
+		cpy[0].Uri = val
+		fn.Versions[0].Runtime.Exec.Platforms = cpy
 	}
 
 	fm.Installed[fn.GroupName()] = fn
@@ -314,9 +358,25 @@ func (fm *FunctionManager) SearchFunctionDefintions(fname string) (result []byte
 func (fm *FunctionManager) GenerateInstalledCatalog() (result []byte, err error) {
 	fc := MakeFunctionCatalog("kaffeine Managed Functions")
 	for _, fn := range fm.Installed {
+		// FIXME: Better binary management
+		if val, ok := fn.Metadata.Annotations[LocalBinaryLocation]; ok && val != "" {
+			fn.Versions[0].Runtime.Exec.Platforms[0].Uri = val
+		}
 		fc.Spec.KrmFunctions = append(fc.Spec.KrmFunctions, fn)
 	}
-	return yaml.Marshal(fc)
+	result, err = yaml.Marshal(fc)
+	if err != nil {
+		return result, err
+	}
+
+	// FIXME: Better binary management
+	for _, fn := range fm.Installed {
+		if val, ok := fn.Metadata.Annotations[OriginalBinaryLocation]; ok && val != "" {
+			fn.Versions[0].Runtime.Exec.Platforms[0].Uri = val
+		}
+	}
+
+	return result, err
 }
 
 func (fm *FunctionManager) UpdateConfig() (err error) {

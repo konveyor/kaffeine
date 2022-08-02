@@ -36,7 +36,7 @@ func NewConfigCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Successfully added catalog '%s'", uri)
+			fmt.Printf("Successfully added catalog '%s'\n", uri)
 			return nil
 		},
 	}

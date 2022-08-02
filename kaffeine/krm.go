@@ -29,6 +29,8 @@ func MakeFunctionCatalog(name string) (fc FunctionCatalog) {
 }
 
 var IgnoreAutoUpdates string = "kaffeine.config/ignore-auto-updates"
+var OriginalBinaryLocation string = "kaffeine.config/original-binary-location"
+var LocalBinaryLocation string = "kaffeine.config/local-binary-location"
 
 type FunctionDefinition struct {
 	// required
