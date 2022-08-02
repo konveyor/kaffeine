@@ -1,0 +1,66 @@
+apiVersion: config.kubernetes.io/v1alpha1
+kind: Catalog
+metadata: 
+  name: "konveyor-io-functions"
+spec: 
+  krmFunctions: 
+  - group: konveyor.io
+    names:
+      kind: RouteFunction
+    description: "A function to transform routes"
+    versions:
+    - name: v1.0.0
+      runtime: 
+        exec:
+          platforms:
+            - bin: foo-amd64-linux
+              os: linux
+              arch: amd64
+              uri: http://localhost:8100/binaries/route-v1.0.0.tar
+              sha256: deadbeef
+  - group: konveyor.io
+    names:
+      kind: ServiceFunction
+    description: "A function to transform services"
+    versions:
+    - name: v1.0.0
+      runtime: 
+        exec:
+          platforms:
+            - bin: foo-amd64-linux
+              os: linux
+              arch: amd64
+              uri: http://localhost:8100/binaries/service-v1.0.0.tar
+              sha256: deadbeef
+    - name: v2.0.0
+      runtime: 
+        exec:
+          platforms:
+            - bin: foo-amd64-linux
+              os: linux
+              arch: amd64
+              uri: http://localhost:8100/binaries/service-v2.0.0.tar
+              sha256: deadbeef
+  - group: konveyor.io
+    names:
+      kind: AntiWP
+    description: "A function that hates Wordpress!"
+    versions:
+    - name: v1
+      runtime: 
+        exec:
+          platforms:
+            - bin: foo-amd64-linux
+              os: linux
+              arch: amd64
+              uri: http://localhost:8100/binaries/anti-wordpress-v1.tar
+              sha256: deadbeef
+    - name: v2
+      runtime: 
+        exec:
+          platforms:
+            - bin: foo-amd64-linux
+              os: linux
+              arch: amd64
+              uri: http://localhost:8100/binaries/anti-wordpress-v2.tar
+              sha256: deadbeef
